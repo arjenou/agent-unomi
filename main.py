@@ -44,9 +44,19 @@ def verify_signature(body: bytes, signature: str) -> bool:
 # 使用 Azure OpenAI 生成回复
 async def generate_ai_response(user_message: str) -> str:
     """使用 Azure OpenAI 生成回复消息"""
-    if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
-        print("警告: Azure OpenAI 配置未设置，返回默认回复")
+    # 检查配置
+    if not AZURE_OPENAI_ENDPOINT:
+        print("错误: AZURE_OPENAI_ENDPOINT 未设置")
         return f"收到您的消息: {user_message}"
+    
+    if not AZURE_OPENAI_API_KEY:
+        print("错误: AZURE_OPENAI_API_KEY 未设置")
+        return f"收到您的消息: {user_message}"
+    
+    print(f"开始调用 Azure OpenAI...")
+    print(f"Endpoint: {AZURE_OPENAI_ENDPOINT}")
+    print(f"Deployment: {AZURE_OPENAI_DEPLOYMENT_NAME}")
+    print(f"API Version: {AZURE_OPENAI_API_VERSION}")
     
     try:
         url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions"
@@ -72,21 +82,38 @@ async def generate_ai_response(user_message: str) -> str:
             "max_tokens": 500
         }
         
+        print(f"请求 URL: {url}")
+        print(f"请求参数: {params}")
+        print(f"请求数据: {json.dumps(data, ensure_ascii=False)}")
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, params=params, json=data)
+            print(f"响应状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+            
             response.raise_for_status()
             result = response.json()
+            
+            print(f"AI 响应结果: {json.dumps(result, ensure_ascii=False)}")
             
             # 提取 AI 生成的回复
             ai_message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             
             if ai_message:
+                print(f"AI 生成的回复: {ai_message}")
                 return ai_message.strip()
             else:
+                print("警告: AI 响应中没有找到消息内容")
                 return f"收到您的消息: {user_message}"
                 
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP 错误: {e}")
+        print(f"响应内容: {e.response.text}")
+        return f"收到您的消息: {user_message}"
     except Exception as e:
-        print(f"AI 生成回复失败: {e}")
+        print(f"AI 生成回复失败: {type(e).__name__}: {e}")
+        import traceback
+        print(f"错误堆栈: {traceback.format_exc()}")
         # 如果 AI 调用失败，返回默认回复
         return f"收到您的消息: {user_message}"
 
