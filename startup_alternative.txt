@@ -1,0 +1,11 @@
+# 备用启动命令（如果 gunicorn + uvicorn worker 不工作）
+
+# 选项 1: 直接使用 uvicorn（简单但性能较低）
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 选项 2: 使用 gunicorn + uvicorn worker（推荐，但需要确保 uvicorn 正确安装）
+gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+# 选项 3: 使用 gunicorn + 标准 worker（如果 uvicorn worker 不可用）
+gunicorn main:app --workers 4 --bind 0.0.0.0:8000 --timeout 120
+
