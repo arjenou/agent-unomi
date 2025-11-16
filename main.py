@@ -25,6 +25,14 @@ AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
 AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 
+# 启动时检查配置
+print("=== Azure OpenAI 配置检查 ===")
+print(f"AZURE_OPENAI_ENDPOINT: {'已设置' if AZURE_OPENAI_ENDPOINT else '未设置'}")
+print(f"AZURE_OPENAI_API_KEY: {'已设置' if AZURE_OPENAI_API_KEY else '未设置'}")
+print(f"AZURE_OPENAI_DEPLOYMENT_NAME: {AZURE_OPENAI_DEPLOYMENT_NAME}")
+print(f"AZURE_OPENAI_API_VERSION: {AZURE_OPENAI_API_VERSION}")
+print("=" * 30)
+
 # 验证 LINE webhook 签名
 def verify_signature(body: bytes, signature: str) -> bool:
     """验证 LINE webhook 请求的签名"""
@@ -172,20 +180,28 @@ async def webhook(request: Request, x_line_signature: Optional[str] = Header(Non
     LINE webhook 端点
     接收和处理 LINE 发送的事件
     """
+    print("=== 收到 LINE Webhook 请求 ===")
+    
     # 读取请求体
     body = await request.body()
     
     # 验证签名
     if not x_line_signature:
+        print("错误: 缺少签名头")
         raise HTTPException(status_code=401, detail="缺少签名头")
     
     if not verify_signature(body, x_line_signature):
+        print("错误: 签名验证失败")
         raise HTTPException(status_code=401, detail="签名验证失败")
+    
+    print("签名验证成功")
     
     # 解析 JSON
     try:
         events = json.loads(body.decode('utf-8'))
-    except json.JSONDecodeError:
+        print(f"解析到 {len(events.get('events', []))} 个事件")
+    except json.JSONDecodeError as e:
+        print(f"JSON 解析错误: {e}")
         raise HTTPException(status_code=400, detail="无效的 JSON 格式")
     
     # 处理事件
