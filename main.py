@@ -19,6 +19,12 @@ LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_MESSAGING_API_URL = "https://api.line.me/v2/bot"
 
+# Azure OpenAI 配置 - 从环境变量读取
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
+AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+
 # 验证 LINE webhook 签名
 def verify_signature(body: bytes, signature: str) -> bool:
     """验证 LINE webhook 请求的签名"""
@@ -33,6 +39,56 @@ def verify_signature(body: bytes, signature: str) -> bool:
     
     expected_signature = base64.b64encode(hash_value).decode('utf-8')
     return hmac.compare_digest(expected_signature, signature)
+
+
+# 使用 Azure OpenAI 生成回复
+async def generate_ai_response(user_message: str) -> str:
+    """使用 Azure OpenAI 生成回复消息"""
+    if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
+        print("警告: Azure OpenAI 配置未设置，返回默认回复")
+        return f"收到您的消息: {user_message}"
+    
+    try:
+        url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions"
+        params = {
+            "api-version": AZURE_OPENAI_API_VERSION
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": AZURE_OPENAI_API_KEY
+        }
+        data = {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是一个友好、专业的助手。请用简洁、自然的中文回复用户的消息。"
+                },
+                {
+                    "role": "user",
+                    "content": user_message
+                }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, params=params, json=data)
+            response.raise_for_status()
+            result = response.json()
+            
+            # 提取 AI 生成的回复
+            ai_message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            
+            if ai_message:
+                return ai_message.strip()
+            else:
+                return f"收到您的消息: {user_message}"
+                
+    except Exception as e:
+        print(f"AI 生成回复失败: {e}")
+        # 如果 AI 调用失败，返回默认回复
+        return f"收到您的消息: {user_message}"
 
 
 # 发送消息到 LINE
@@ -120,19 +176,24 @@ async def webhook(request: Request, x_line_signature: Optional[str] = Header(Non
                 user_message = event.get("message", {}).get("text", "")
                 print(f"收到消息来自用户 {user_id}: {user_message}")
                 
+                # 使用 Azure OpenAI 生成回复
+                ai_response = await generate_ai_response(user_message)
+                print(f"AI 生成的回复: {ai_response}")
+                
                 # 回复消息（使用 reply API）
                 if reply_token:
-                    await reply_message(reply_token, f"收到您的消息: {user_message}")
+                    await reply_message(reply_token, ai_response)
                 
                 # 或者使用 push API 发送消息
-                # await send_line_message(user_id, f"您说: {user_message}")
+                # await send_line_message(user_id, ai_response)
         
         elif event_type == "follow":
             # 处理用户关注事件
             user_id = event.get("source", {}).get("userId")
             print(f"新用户关注: {user_id}")
             if user_id:
-                await send_line_message(user_id, "欢迎关注！")
+                welcome_message = await generate_ai_response("用户刚刚关注了我的 LINE 官方账号，请用友好、简洁的中文说一句欢迎的话。")
+                await send_line_message(user_id, welcome_message)
         
         elif event_type == "unfollow":
             # 处理用户取消关注事件
